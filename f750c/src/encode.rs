@@ -215,12 +215,6 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             require_operants_exact!(operands, 1);
             match &operands[0] {
                 SemanticOperand::Register(reg) => Ok(OpcodePayload::PopReg(*reg)),
-                SemanticOperand::Deref(deref) => match &deref.kind {
-                    SemanticDerefKind::Binding(b) => Ok(OpcodePayload::PopMem(DerefType::Binding(SymbolRef::new(b.name.clone(), deref.offset)))),
-                    SemanticDerefKind::Address(addr) => Ok(OpcodePayload::PopMem(DerefType::Addr(*addr))),
-                    SemanticDerefKind::Register(reg) => Ok(OpcodePayload::PopMem(DerefType::Register(*reg, deref.offset))),
-                    _ => no_matching_opcode!(mnemonic, operands)
-                },
                 _ => no_matching_opcode!(mnemonic, operands)
             }
         }
