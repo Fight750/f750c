@@ -205,6 +205,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             require_operants_exact!(operands, 1);
             match &operands[0] {
                 SemanticOperand::Register(reg) => Ok(OpcodePayload::PushReg(*reg)),
+                SemanticOperand::EngineParam(param) => Ok(OpcodePayload::PushEngineParam(param.clone())),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::PushImm(l.to_data_type())),
                 SemanticOperand::Immediate(SemanticImmediateType::Label(label, offset)) => Ok(OpcodePayload::PushLabel(SymbolRef::new(label.name.clone(), *offset))),
                 SemanticOperand::Immediate(SemanticImmediateType::Binding(binding, offset)) => Ok(OpcodePayload::PushBinding(SymbolRef::new(binding.name.clone(), *offset))),

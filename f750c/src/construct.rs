@@ -553,11 +553,11 @@ fn expand_construct_engcall(construct: &SemanticCompilerConstruct, out: &mut Vec
         .enumerate()
         .skip(1)
     {
-        if matches!(operand, SemanticOperand::Immediate(_)) || matches!(operand, SemanticOperand::Register(_)) {
+        if matches!(operand, SemanticOperand::Immediate(_)) || matches!(operand, SemanticOperand::Register(_)) || matches!(operand, SemanticOperand::EngineParam(_)) {
             args.push(operand);
 
         } else {
-            return construct.invalid_operand_error(i, format!("For parameter {i} '{operand}': Expected an immediate or a register.").as_str());
+            return construct.invalid_operand_error(i, format!("For parameter {i} '{operand}': Expected an immediate, engine parameter, or a register.").as_str());
         }
     }
 

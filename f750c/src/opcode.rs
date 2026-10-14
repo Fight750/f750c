@@ -61,6 +61,7 @@ pub enum Opcode {
     // PopMem = 0x53,
     PushLabel = 0x54,
     PushBinding = 0x55,
+    PushEngineParam = 0x56,
 
     // Jump
     JmpReg = 0xB0,
@@ -119,6 +120,7 @@ pub enum OpcodePayload {
     PushLabel(SymbolRef),
     PushBinding(SymbolRef),
     PopReg(RegisterSpec),
+    PushEngineParam(String),
     // PopMem(DerefType),
 
     // Jump
@@ -175,6 +177,7 @@ impl OpcodePayload {
             Self::PopReg(_) => Opcode::PopReg,
             Self::PushBinding(_) => Opcode::PushBinding,
             Self::PushLabel(_) => Opcode::PushLabel,
+            Self::PushEngineParam(_) => Opcode::PushEngineParam,
 
             Self::JmpReg(_, _) => Opcode::JmpReg,
             Self::JmpImm(_, _) => Opcode::JmpImm,
@@ -314,6 +317,10 @@ impl OpcodePayload {
             },
             Self::PopReg(reg) => {
                 reg.serialize(stream);
+            },
+            Self::PushEngineParam(param_name) => {
+                let param_index = eng_calls.get(param_name).ok_or_else(|| BytecodeSerializeError::UnknownEngineParameter(param_name.clone()))?;
+                stream.write_varint64(param_index);
             },
             Self::JmpReg(cond, reg) => {
                 stream.write_u8(*cond as u8);
