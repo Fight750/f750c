@@ -127,6 +127,31 @@ impl SemanticLiteral {
         }
     }
     
+    /// Returns whether this literal represents one of the integer values 8, 4, 2, or 1.
+    pub fn size_int(&self) -> Option<u8> {
+        match self {
+            SemanticLiteral::UntypedInteger(i) => {
+                if matches!(i, 8 | 4 | 2 | 1) {
+                    Some(*i as u8)
+                } else {
+                    None
+                }
+            },
+            SemanticLiteral::Typed(t) => {
+                let Some(int) = t.as_int() else {
+                    return None;
+                };
+                
+                if matches!(int, 8 | 4 | 2 | 1) {
+                    Some(int as u8)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+    
     pub fn serialize_raw(&self, stream: &mut BytecodeStream) {
         match self {
             SemanticLiteral::UntypedInteger(i) => {

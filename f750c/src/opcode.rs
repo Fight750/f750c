@@ -579,6 +579,20 @@ impl Register {
             _ => None,
         }
     }
+    
+    pub fn local_from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Register::LocalA),
+            1 => Some(Register::LocalB),
+            2 => Some(Register::LocalC),
+            3 => Some(Register::LocalD),
+            4 => Some(Register::LocalE),
+            5 => Some(Register::LocalF),
+            6 => Some(Register::LocalG),
+            7 => Some(Register::LocalH),
+            _ => None,
+        }
+    }
 }
 
 /// Represents all compiler constructs of the F750 virtual machine.

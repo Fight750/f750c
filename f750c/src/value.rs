@@ -171,8 +171,14 @@ impl BytecodeSerialize for DataTypeLiteral {
             DataTypeLiteral::Word(v) => stream.write_varint64(*v as u64),
             DataTypeLiteral::Dword(v) => stream.write_varint64(*v as u64),
             DataTypeLiteral::Qword(v) => stream.write_varint64(*v),
-            DataTypeLiteral::Float(v) => stream.write_varint64(*v as u64),
-            DataTypeLiteral::Double(v) => stream.write_varint64(*v as u64),
+            DataTypeLiteral::Float(v) => {
+                let bytes = v.to_be_bytes();
+                stream.write_varint64(u32::from_be_bytes(bytes) as u64);
+            }
+            DataTypeLiteral::Double(v) => {
+                let bytes = v.to_be_bytes();
+                stream.write_varint64(u64::from_be_bytes(bytes));
+            }
         }
     }
 }

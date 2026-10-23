@@ -123,7 +123,8 @@ fn process_single_source(source: &[String]) -> CompileResult<Vec<SemanticRepr>> 
         }
 
         let res = match tokenizer::tokenize_line(line) {
-            Ok(res ) => res,
+            Ok(Some(res) ) => res,
+            Ok(None) => continue,
             Err(e) => return Err(Error::Tokenize(e, i + 1)),
         };
 

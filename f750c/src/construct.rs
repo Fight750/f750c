@@ -39,6 +39,11 @@ pub enum ConstructExpansionError {
         opcode: CompilerConstruct,
         minimum: usize,
     },
+    #[error("Compiler construct '{opcode}' expects at most {maximum} operand(s).")]
+    MaximumOperands {
+        opcode: CompilerConstruct,
+        maximum: usize,
+    },
     #[error("Invalid operand at index {index} '{operand}': {reason}")]
     InvalidOperand {
         index: usize,
@@ -451,6 +456,7 @@ fn expand_construct_single(construct: &SemanticCompilerConstruct, out: &mut Vec<
         CompilerConstruct::Pry => expand_construct_pry(construct, out),
         CompilerConstruct::GetArg => expand_construct_getarg(construct, out),
         CompilerConstruct::EngineCall => expand_construct_engcall(construct, out),
+        CompilerConstruct::LoadArgs => expand_construct_loadargs(construct, out),
         _ => Err(ConstructExpansionError::InvalidConstruct(construct.opcode)),
     }
 }
@@ -583,5 +589,52 @@ fn expand_construct_engcall(construct: &SemanticCompilerConstruct, out: &mut Vec
         opcode: OpcodeMnemonic::EngCall,
         operands: vec![],
     }));
+    Ok(())
+}
+
+fn expand_construct_loadargs(construct: &SemanticCompilerConstruct, out: &mut Vec<SemanticRepr>) -> Result<(), ConstructExpansionError> {
+    if construct.operands.len() < 1 {
+        return Err(ConstructExpansionError::MinimumOperands {
+            opcode: construct.opcode,
+            minimum: 1,
+        });
+    }
+
+    if construct.operands.len() > 8 {
+        return Err(ConstructExpansionError::MaximumOperands {
+            opcode: construct.opcode,
+            maximum: 8,
+        });
+    }
+
+    let count = construct.operands.len();
+    let mut total_offset = 0u64;
+
+    for (i, operand) in construct.operands.iter().enumerate() {
+        let register = Register::local_from_index((count - 1 - i) as u8).expect("Invalid register index for loadargs construct.");
+        let SemanticOperand::Immediate(SemanticImmediateType::Literal(lit)) = operand else {
+            return construct.invalid_operand_error(i, format!("For parameter {i} '{operand}': Expected a literal.").as_str());
+        };
+
+        let Some(size_int) = lit.size_int() else {
+            return construct.invalid_operand_error(i, format!("For parameter {i} '{operand}': Expected either 8, 4, 2, or 1.").as_str());
+        };
+
+        let deref = SemanticDeref {
+            kind: SemanticDerefKind::Register(RegisterSpec::qword(Register::StackPointer)),
+            offset: (16 + total_offset) as i64,
+        };
+
+        total_offset += size_int as u64;
+
+        out.push(SemanticRepr::Instruction(SemanticInstruction {
+            opcode: OpcodeMnemonic::Mov,
+            operands: vec![
+                SemanticOperand::Register(RegisterSpec::qword(register)),
+                SemanticOperand::Deref(deref),
+            ],
+        }));
+    }
+
     Ok(())
 }

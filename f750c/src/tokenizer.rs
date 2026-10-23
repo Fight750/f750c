@@ -181,7 +181,7 @@ impl TokenStream {
 }
 
 /// Tokenizes a line of source code into a vector of `ParserToken`s, which represent the lexical structure of the line.
-pub fn tokenize_line(line: &str) -> ParseResult<TokenizedLine> {
+pub fn tokenize_line(line: &str) -> ParseResult<Option<TokenizedLine>> {
     let mut ret = Vec::new();
     let mut cur = 0usize;
 
@@ -190,7 +190,7 @@ pub fn tokenize_line(line: &str) -> ParseResult<TokenizedLine> {
         match c {
             ATOM_COMMENT => {
                 // Ignore the rest of the line after a comment
-                break;
+                return Ok(None);
             }
             ATOM_WHITESPACE | '\t' => {
                 ret.push(Token::Whitespace);
@@ -276,7 +276,7 @@ pub fn tokenize_line(line: &str) -> ParseResult<TokenizedLine> {
         ret.pop();
     }
 
-    Ok(ret)
+    Ok(Some(ret))
 }
 
 fn is_special_atom(ch: char, exclude_digit: bool) -> bool {
