@@ -7,8 +7,10 @@ use log::info;
 use thiserror::Error;
 use crate::bytecode::{BytecodeSerialize, BytecodeStream};
 use crate::semantic::{SemanticBindingDef, SemanticDeref, SemanticDerefKind, SemanticImmediateType, SemanticInstruction, SemanticLiteral, SemanticOperand, SemanticRepr, SemanticSource, SemanticSymbol};
-use crate::tokenizer;
+use crate::{tokenizer, util};
 use crate::value::SymbolName;
+
+const STRING_TABLE_NAMESPACE: &str = "__f750c_string_table";
 
 pub trait SymbolTable: Debug {
     fn get_symbol_ident(&self, symbol: &SymbolName) -> Option<u64>;
@@ -32,6 +34,7 @@ pub struct BindingTable {
     tentative_entries: IndexMap<SymbolName, SemanticBindingDef>,
     counter: usize,
     const_deref_map: HashMap<SymbolName, bool>,
+    string_table: IndexMap<String, SymbolName>,
 }
 
 impl SymbolTable for BindingTable {
@@ -85,11 +88,17 @@ impl BindingTable {
             tentative_entries: IndexMap::new(),
             counter: 0,
             const_deref_map: HashMap::new(),
+            string_table: IndexMap::new(),
         }
     }
 
     pub fn parse_and_lower(lines: &mut IndexMap<String, Vec<SemanticRepr>>) -> CompileResult<Self> {
         let mut ret = Self::new();
+
+        for (module_name, source) in lines.iter_mut() {
+            ret.resolve_string_table(source, module_name)?;
+        }
+        ret.allocate_string_table();
 
         for (module_name, source) in lines.iter() {
             ret.preprocess_bindings(source, module_name)?;
@@ -106,7 +115,44 @@ impl BindingTable {
         
         Ok(ret)
     }
-    
+
+    fn resolve_string_table(&mut self, source: &mut SemanticSource, module_name: &str) -> BindingTableResult<()> {
+        for line in source {
+            let SemanticRepr::Instruction(instruction) = line else {
+                continue;
+            };
+
+            for operand in instruction.operands.iter_mut() {
+                if let SemanticOperand::Immediate(SemanticImmediateType::Literal(SemanticLiteral::String(s))) = operand {
+                    if !self.string_table.contains_key(s) {
+                        let symbol = SymbolName::new(&format!("str_{}", util::random_internal_label()), Some(STRING_TABLE_NAMESPACE));
+                        self.string_table.insert(s.clone(), symbol.clone());
+                    }
+
+                    let symbol = self.string_table.get(s).unwrap();
+                    *operand = SemanticOperand::Immediate(SemanticImmediateType::Binding(SemanticSymbol::new(symbol.clone(), false), 0));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn allocate_string_table(&mut self) {
+        for (s, symbol) in self.string_table.iter() {
+            let len = s.len() + 1;
+
+            let entry = BindingTableEntry {
+                def: SemanticBindingDef::from_string_nt(s),
+                alloc: BindingAllocationType::Static(self.counter),
+            };
+
+            self.counter += len;
+            self.entries.insert(symbol.clone(), entry.clone());
+            self.tentative_entries.insert(symbol.clone(), entry.def.clone());
+        }
+    }
+
     fn preprocess_bindings(&mut self, source: &SemanticSource, module_name: &str) -> BindingTableResult<()> {
         for line in source {
             match line {
@@ -248,6 +294,7 @@ impl BindingTable {
                     let alloc = if !self.can_inline(&symbol, def) {
                         let value = self.counter;
                         self.counter += def.total_size();
+
                         BindingAllocationType::Static(value)
 
                     } else {

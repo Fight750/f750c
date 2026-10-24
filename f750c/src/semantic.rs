@@ -64,6 +64,18 @@ impl SemanticBindingDef {
             .map(|c| c.size())
             .sum()
     }
+
+    pub fn from_string_nt(s: &str) -> Self {
+        Self {
+            name: s.to_string(),
+            constant: false,
+            public: false,
+            values: vec![
+                SemanticLiteral::String(s.to_string()),
+                SemanticLiteral::Typed(DataTypeLiteral::Byte(0)),
+            ],
+        }
+    }
 }
 
 impl Display for SemanticBindingDef {

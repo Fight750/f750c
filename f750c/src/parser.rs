@@ -547,6 +547,10 @@ fn parse_arguments(stream: &mut TokenStream, allow_mnemonic_as_operand: bool) ->
                     let sem_literal = SemanticLiteral::UntypedFloating(n);
                     builder.push_next_flat(SemanticOperand::Immediate(SemanticImmediateType::Literal(sem_literal)))?;
                 }
+                Token::QuotedString(s) => {
+                    // string literal support
+                    builder.push_next_flat(SemanticOperand::Immediate(SemanticImmediateType::Literal(SemanticLiteral::String(s))))?;
+                }
                 _ => {
                     return Err(ParseError::UnexpectedToken(format!("Expected a register, label, binding, or literal as operand, found {next:?}")));
                 }
