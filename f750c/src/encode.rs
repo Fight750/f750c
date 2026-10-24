@@ -134,7 +134,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             let SemanticOperand::Register(reg1) = &operands[0] else {
                 return no_matching_opcode!(mnemonic, operands);
             };
-            
+
             match &operands[1] {
                 SemanticOperand::Register(reg2) => Ok(OpcodePayload::CmpRegReg(*reg1, *reg2)),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::CmpRegImm(*reg1, l.to_data_type())),
@@ -146,7 +146,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             let SemanticOperand::Register(reg1) = &operands[0] else {
                 return no_matching_opcode!(mnemonic, operands);
             };
-            
+
             match &operands[1] {
                 SemanticOperand::Register(reg2) => Ok(OpcodePayload::AddRegReg(*reg1, *reg2)),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::AddRegImm(*reg1, l.to_data_type())),
@@ -158,7 +158,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             let SemanticOperand::Register(reg1) = &operands[0] else {
                 return no_matching_opcode!(mnemonic, operands);
             };
-            
+
             match &operands[1] {
                 SemanticOperand::Register(reg2) => Ok(OpcodePayload::SubRegReg(*reg1, *reg2)),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::SubRegImm(*reg1, l.to_data_type())),
@@ -170,7 +170,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             let SemanticOperand::Register(reg1) = &operands[0] else {
                 return no_matching_opcode!(mnemonic, operands);
             };
-            
+
             match &operands[1] {
                 SemanticOperand::Register(reg2) => Ok(OpcodePayload::MulRegReg(*reg1, *reg2)),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::MulRegImm(*reg1, l.to_data_type())),
@@ -182,7 +182,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             let SemanticOperand::Register(reg1) = &operands[0] else {
                 return no_matching_opcode!(mnemonic, operands);
             };
-            
+
             match &operands[1] {
                 SemanticOperand::Register(reg2) => Ok(OpcodePayload::DivRegReg(*reg1, *reg2)),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::DivRegImm(*reg1, l.to_data_type())),
@@ -194,7 +194,7 @@ fn select_opcode(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) -> Inst
             let SemanticOperand::Register(reg1) = &operands[0] else {
                 return no_matching_opcode!(mnemonic, operands);
             };
-            
+
             match &operands[1] {
                 SemanticOperand::Register(reg2) => Ok(OpcodePayload::ModRegReg(*reg1, *reg2)),
                 SemanticOperand::Immediate(SemanticImmediateType::Literal(l)) => Ok(OpcodePayload::ModRegImm(*reg1, l.to_data_type())),
@@ -256,12 +256,15 @@ fn select_opcode_move(mnemonic: OpcodeMnemonic, operands: &[SemanticOperand]) ->
         }
         (SemanticOperand::Register(reg), SemanticOperand::Register(reg2)) => {
             Ok(OpcodePayload::MovRegReg(*reg, *reg2))
-            }
-            (SemanticOperand::Register(reg), SemanticOperand::EngineParam(param)) => {
-                Ok(OpcodePayload::MovRegEngineParam(*reg, param.clone()))
-            }
+        }
+        (SemanticOperand::Register(reg), SemanticOperand::EngineParam(param)) => {
+            Ok(OpcodePayload::MovRegEngineParam(*reg, param.clone()))
+        }
         (SemanticOperand::EngineParam(param), SemanticOperand::Register(reg)) => {
             Ok(OpcodePayload::MovEngineParamReg(param.clone(), *reg))
+        }
+        (SemanticOperand::EngineParam(param), SemanticOperand::Immediate(SemanticImmediateType::Literal(lit))) => {
+            Ok(OpcodePayload::MovEngineParamImm(param.clone(), lit.to_data_type()))
         }
         (SemanticOperand::Register(reg), SemanticOperand::Immediate(SemanticImmediateType::Label(label, offset))) => {
             Ok(OpcodePayload::MovRegLabel(*reg, SymbolRef::new(label.name.clone(), *offset)))

@@ -37,6 +37,7 @@ pub enum Opcode {
     MovEngineParamReg = 0x26,
     MovRegLabel = 0x27,
     MovRegBinding = 0x28,
+    MovEngineParamImm = 0x29,
 
     // Comparison
     CmpRegReg = 0x30,
@@ -97,6 +98,7 @@ pub enum OpcodePayload {
     MovEngineParamReg(String, RegisterSpec),
     MovRegLabel(RegisterSpec, SymbolRef),
     MovRegBinding(RegisterSpec, SymbolRef),
+    MovEngineParamImm(String, DataTypeLiteral),
 
     // Comparison
     CmpRegReg(RegisterSpec, RegisterSpec),
@@ -157,6 +159,7 @@ impl OpcodePayload {
             Self::MovEngineParamReg(_, _) => Opcode::MovEngineParamReg,
             Self::MovRegLabel(_, _) => Opcode::MovRegLabel,
             Self::MovRegBinding(_, _) => Opcode::MovRegBinding,
+            Self::MovEngineParamImm(_, _) => Opcode::MovEngineParamImm,
 
             Self::CmpRegReg(_, _) => Opcode::CmpRegReg,
             Self::CmpRegImm(_, _) => Opcode::CmpRegImm,
@@ -254,6 +257,11 @@ impl OpcodePayload {
             Self::MovRegBinding(reg, binding_ref) => {
                 reg.serialize(stream);
                 binding_ref.bytecode_serialize(stream, bindings)?;
+            },
+            Self::MovEngineParamImm(param_name, imm) => {
+                let param_index = eng_calls.get(param_name).ok_or_else(|| BytecodeSerializeError::UnknownEngineParameter(param_name.clone()))?;
+                stream.write_varint64(param_index);
+                imm.serialize(stream);
             },
             Self::CmpRegReg(reg1, reg2) => {
                 reg1.serialize(stream);
