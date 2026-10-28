@@ -55,7 +55,7 @@ pub enum Token {
     QuotedString(String),
     Keyword(ReservedWord),
     /// Represents anything that does not match any of the other token types, such as identifiers, labels, and binding names.
-    Token(String),
+    Raw(String),
 }
 
 impl Display for Token {
@@ -73,7 +73,7 @@ impl Display for Token {
             Token::FloatLiteral(val) => write!(f, "{}", val),
             Token::QuotedString(val) => write!(f, "\"{}\"", val),
             Token::Keyword(val) => write!(f, "{}", val.as_ref()),
-            Token::Token(val) => write!(f, "{}", val),
+            Token::Raw(val) => write!(f, "{}", val),
         }
     }
 }
@@ -272,7 +272,7 @@ pub fn tokenize_line(line: &str) -> ParseResult<Option<TokenizedLine>> {
                     } else if let Ok(keyword) = ReservedWord::from_str(token) {
                         ret.push(Token::Keyword(keyword));
                     } else {
-                        ret.push(Token::Token(token.to_string()));
+                        ret.push(Token::Raw(token.to_string()));
                     }
                     cur += next_special;
                 }

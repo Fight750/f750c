@@ -4,6 +4,7 @@ use std::fmt::{write, Debug, Display, Formatter};
 use bitfield_struct::bitfield;
 use crate::bytecode::{BytecodeSerialize, BytecodeStream};
 use crate::opcode::{CompilerConstruct, OpcodeMnemonic, Register};
+use crate::preprocessor::PreprocessorDirective;
 use crate::tokenizer::Token;
 use crate::util;
 use crate::value::{DataType, DataTypeLiteral, RegisterSpec, SymbolName};
@@ -19,7 +20,7 @@ pub enum SemanticRepr {
     Instruction(SemanticInstruction),
     /// Represents a compiler construct.
     CompilerConstruct(SemanticCompilerConstruct),
-    PreprocessorDirectiveRaw(Vec<Token>),
+    PreprocessorDirective(PreprocessorDirective),
 }
 
 impl Display for SemanticRepr {
@@ -29,18 +30,33 @@ impl Display for SemanticRepr {
             SemanticRepr::Label(a) => write!(f, "{a}"),
             SemanticRepr::Instruction(instr) => write!(f, "{}", instr),
             SemanticRepr::CompilerConstruct(construct) => write!(f, "{}", construct),
-            SemanticRepr::PreprocessorDirectiveRaw(tokens) => {
-                write!(f, "#")?;
-                for token in tokens {
-                    write!(f, "{}", token)?;
-                }
-                Ok(())
-            }
+            SemanticRepr::PreprocessorDirective(dir) => write!(f, "{}", dir),
         }
     }
 }
 
 pub type SemanticSource = [SemanticRepr];
+
+#[derive(Debug, Clone)]
+pub struct SemanticReprInfo {
+    pub repr: SemanticRepr,
+    pub namespace: String,
+}
+
+impl SemanticReprInfo {
+    pub fn new(repr: SemanticRepr, namespace: String) -> Self {
+        Self {
+            repr,
+            namespace,
+        }
+    }
+}
+
+impl From<SemanticReprInfo> for SemanticRepr {
+    fn from(value: SemanticReprInfo) -> Self {
+        value.repr
+    }
+}
 
 /// Represents the semantic definition of a binding.
 #[derive(Debug, Clone)]

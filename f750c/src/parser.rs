@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 use crate::semantic::{SemanticRepr, SemanticOperand, SemanticBindingDef, SemanticInstruction, SemanticSymbol, SemanticCompilerConstruct, SemanticLiteral, SemanticDeref, SemanticDerefKind, SemanticImmediateType, SemanticLabelDef};
 use crate::{semantic, tokenizer, util};
 use crate::opcode::{CompilerConstruct, OpcodeMnemonic, ReservedWord};
+use crate::preprocessor::{PreprocessorDirective, PreprocessorError};
 use crate::tokenizer::{Token, TokenStream, TokenizedLine};
 use crate::value::{DataType, DataTypeLiteral, RegisterSpec, RegisterSpecError, SymbolName};
 
@@ -52,6 +53,8 @@ pub enum ParseError {
     ExternalSymbolWithoutNamespace(String),
     #[error("Duplicate keyword modifier: {0}")]
     DuplicateKeyword(ReservedWord),
+    #[error("Preprocessor directive parsing error: {0}")]
+    ParsePreprocessorDirective(#[from] PreprocessorError),
 
     #[error("Invalid register spec: {0}")]
     InvalidRegisterSpec(#[from] RegisterSpecError),
@@ -106,7 +109,7 @@ fn parse_line(tokens: &[Token]) -> ParseResult<SemanticRepr> {
     let mut keyword_modifiers = HashSet::new();
 
     // binding
-    if let Some(Token::Token(s)) = stream.peek_non_whitespace() && s == tokenizer::STATIC_DEF_KEYWORD {
+    if let Some(Token::Raw(s)) = stream.peek_non_whitespace() && s == tokenizer::STATIC_DEF_KEYWORD {
         stream.next_non_whitespace_or_err()?;
         stream.expect(Token::Whitespace)?;
 
@@ -129,7 +132,7 @@ fn parse_line(tokens: &[Token]) -> ParseResult<SemanticRepr> {
         }
 
         let first = stream.next_non_whitespace_or_err()?;
-        let Token::Token(first) = first else {
+        let Token::Raw(first) = first else {
             return Err(ParseError::UnexpectedToken(format!("Expected an identifier for a binding definition, found {:?}", first)));
         };
         binding_name = first;
@@ -165,7 +168,7 @@ fn parse_line(tokens: &[Token]) -> ParseResult<SemanticRepr> {
     if let Some(Token::Annotation) = stream.peek() {
         stream.next_or_err()?; // consume the annotation token (@)
         let next = stream.next_non_whitespace_or_err()?;
-        let Token::Token(construct_name) = next else {
+        let Token::Raw(construct_name) = next else {
             return Err(ParseError::UnexpectedToken(format!("Expected a compiler construct name after '@', found {:?}", next)));
         };
 
@@ -189,17 +192,13 @@ fn parse_line(tokens: &[Token]) -> ParseResult<SemanticRepr> {
 
     // raw preprocessor directive
     if let Some(Token::Hashtag) = stream.peek() {
-        stream.next_or_err()?;
-        let mut ret = Vec::new();
-        while let Some(token) = stream.next() {
-            ret.push(token.clone());
-        }
-        return Ok(SemanticRepr::PreprocessorDirectiveRaw(ret));
+        let directive = PreprocessorDirective::parse_line(&mut stream)?;
+        return Ok(SemanticRepr::PreprocessorDirective(directive));
     }
 
     // labels and instructions
     let first = stream.next_non_whitespace_or_err()?;
-    let Token::Token(first) = first else {
+    let Token::Raw(first) = first else {
         return Err(ParseError::UnexpectedToken(format!("Expected an label (starts with underscore(_)) or an instruction at the start of a new line, found {first:?}")));
     };
 
@@ -270,7 +269,7 @@ fn parse_binding_values(stream: &mut TokenStream) -> ParseResult<Vec<SemanticLit
                 byte_mode = true;
                 ret.push(SemanticLiteral::String(s));
             }
-            Token::Token(s) => {
+            Token::Raw(s) => {
                 // try parse data type
                 if let Ok(dt) = s.parse::<DataType>() {
                     let next = stream.next_non_whitespace_or_err()?;
@@ -465,7 +464,7 @@ fn parse_arguments(stream: &mut TokenStream, allow_mnemonic_as_operand: bool) ->
                 Token::Hashtag => {
                     // engine parameter
                     let next = stream.next_non_whitespace_or_err()?;
-                    let Token::Token(param_name) = next else {
+                    let Token::Raw(param_name) = next else {
                         return Err(ParseError::UnexpectedToken(format!("Expected an engine parameter name after '#', found {next:?}")));
                     };
 
@@ -482,7 +481,7 @@ fn parse_arguments(stream: &mut TokenStream, allow_mnemonic_as_operand: bool) ->
                         _ => return Err(ParseError::UnexpectedToken(format!("Keyword '{kw}' not valid here"))),
                     }
                 }
-                Token::Token(token) => {
+                Token::Raw(token) => {
                     // mnenonic as operand
                     if allow_mnemonic_as_operand {
                         if let Ok(mnemonic) = OpcodeMnemonic::from_str(&token) {
@@ -606,7 +605,7 @@ fn parse_semantic_symbol(first: &str, stream: &mut TokenStream) -> ParseResult<S
     let first = if external {
         // If the first token is "extern", we expect the next token to be the actual name
         let next = stream.next_non_whitespace_or_err()?;
-        let Token::Token(s) = next else {
+        let Token::Raw(s) = next else {
             return Err(ParseError::UnexpectedToken(format!("Expected a namespace or name after 'extern', found {next}")));
         };
 
@@ -619,7 +618,7 @@ fn parse_semantic_symbol(first: &str, stream: &mut TokenStream) -> ParseResult<S
     if let Some(Token::NamespaceSeparator) = stream.peek_non_whitespace() {
         stream.next_non_whitespace_or_err()?;
         let second = stream.next_non_whitespace_or_err()?;
-        let Token::Token(second) = second else {
+        let Token::Raw(second) = second else {
             return Err(ParseError::UnexpectedToken(format!("Expected a label or binding name after namespace separator, found {second:?}")));
         };
 

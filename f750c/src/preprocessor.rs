@@ -1,9 +1,39 @@
 //! This module defines processor features, such as preprocessor directive processing and macro expansion.
 
-use strum::{AsRefStr, EnumString};
+use std::fmt::Display;
+use std::str::FromStr;
+use strum::{AsRefStr, Display, EnumString};
+use thiserror::Error;
+use crate::parser::ParseError;
+use crate::tokenizer;
+use crate::tokenizer::{Token, TokenStream};
 
-#[derive(Debug, Clone, Copy, AsRefStr, EnumString)]
-pub enum PreprocessorDirective {
+#[derive(Debug, Clone, Error)]
+pub enum PreprocessorError {
+    #[error("Unexpected token: {0}")]
+    UnexpectedToken(String),
+    #[error("Unexpected end of line")]
+    UnexpectedEOL,
+    #[error("Unknown preprocessor directive: {0}")]
+    UnknownDirective(String),
+    #[error("Unsupported preprocessor directive: {0}")]
+    UnsupportedDirective(PreprocessorDirectiveKind),
+}
+
+impl From<ParseError> for PreprocessorError {
+    fn from(err: ParseError) -> Self {
+        match err {
+            ParseError::UnexpectedToken(token) => PreprocessorError::UnexpectedToken(token),
+            ParseError::UnexpectedEOL => PreprocessorError::UnexpectedEOL,
+            _ => PreprocessorError::UnexpectedToken(format!("Parse error: {:?}", err)),
+        }
+    }
+}
+
+pub type PreprocessorResult<T> = Result<T, PreprocessorError>;
+
+#[derive(Debug, Clone, Copy, Display, AsRefStr, EnumString)]
+pub enum PreprocessorDirectiveKind {
     #[strum(serialize = "use")]
     Use,
     #[strum(serialize = "inherit")]
@@ -24,4 +54,65 @@ pub enum PreprocessorDirective {
     IfNotDefined,
     #[strum(serialize = "endif")]
     BlockEnd,
+}
+
+#[derive(Debug, Clone)]
+pub enum PreprocessorDirective {
+    Use(String, String),
+}
+
+impl PreprocessorDirective {
+    pub fn parse_line(stream: &mut TokenStream) -> PreprocessorResult<Self> {
+        stream.expect_non_whitespace(Token::Hashtag)?;
+        let Token::Raw(directive_str) = stream.next_non_whitespace_or_err()? else {
+            return Err(PreprocessorError::UnexpectedEOL);
+        };
+
+        let kind = PreprocessorDirectiveKind::from_str(&directive_str)
+            .map_err(|_| PreprocessorError::UnknownDirective(directive_str.clone()))?;
+
+        // whitespace after directive
+        stream.expect(Token::Whitespace)?;
+
+        match kind {
+            PreprocessorDirectiveKind::Use => {
+                let Token::Raw(namespace) = stream.next_non_whitespace_or_err()? else {
+                    return Err(PreprocessorError::UnexpectedEOL);
+                };
+
+                let alias = if stream.peek_non_whitespace().is_some() {
+                    let Token::Raw(alias) = stream.next_non_whitespace_or_err()? else {
+                        return Err(PreprocessorError::UnexpectedToken("Expected alias after namespace".to_string()));
+                    };
+
+                    alias
+
+                } else {
+                    namespace.split(tokenizer::CHAR_DOT)
+                        .last()
+                        .ok_or_else(|| PreprocessorError::UnexpectedToken("Expected alias after namespace".to_string()))?
+                        .to_string()
+                };
+
+                Ok(PreprocessorDirective::Use(namespace.clone(), alias))
+            }
+            _ => Err(PreprocessorError::UnsupportedDirective(kind)),
+        }
+    }
+
+    pub fn kind(&self) -> PreprocessorDirectiveKind {
+        match self {
+            PreprocessorDirective::Use(_, _) => PreprocessorDirectiveKind::Use,
+        }
+    }
+}
+
+impl Display for PreprocessorDirective {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PreprocessorDirective::Use(namespace, alias) => {
+                write!(f, "#use {} {}", namespace, alias)
+            }
+        }
+    }
 }
