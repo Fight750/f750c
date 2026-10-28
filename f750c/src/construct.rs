@@ -250,7 +250,7 @@ impl BlockConstructConditional {
         }
 
         // 3. end
-        out.push(SemanticRepr::Label(endif_symbol));
+        out.push(SemanticRepr::Label(endif_symbol.into()));
     }
 
     fn push_statement_jump(out: &mut Vec<SemanticRepr>, construct: &SemanticCompilerConstruct, target: &SemanticSymbol) {
@@ -274,7 +274,7 @@ impl BlockConstructConditional {
     }
 
     fn push_body(out: &mut Vec<SemanticRepr>, start_label: &SemanticSymbol, body: &BlockBody, end_label: &SemanticSymbol) {
-        out.push(SemanticRepr::Label(start_label.clone()));
+        out.push(SemanticRepr::Label(start_label.clone().into()));
         for line in body {
             match line {
                 BlockBodyLine::Line(line) => out.push(line.clone()),
@@ -395,15 +395,6 @@ pub fn expand_construct_source(source: &SemanticSource) -> Result<Vec<SemanticRe
             break;
         }
         let line = &source[i];
-
-        // toggle data section
-        if let SemanticRepr::SpecialSection(name) = line && name == tokenizer::SPECIAL_SECTION_LABEL_DATA {
-            data_section = true;
-        }
-
-        if matches!(line, SemanticRepr::Label(_)) || matches!(line, SemanticRepr::Instruction(_)) {
-            data_section = false;
-        }
 
         let SemanticRepr::CompilerConstruct(construct) = line else {
             ret.push(line.clone());
@@ -568,14 +559,6 @@ fn expand_construct_engcall(construct: &SemanticCompilerConstruct, out: &mut Vec
     }
 
     // generate code
-    // mov a64, <engine_param>
-    out.push(SemanticRepr::Instruction(SemanticInstruction {
-        opcode: OpcodeMnemonic::Mov,
-        operands: vec![
-            SemanticOperand::Register(RegisterSpec::qword(Register::A)),
-            SemanticOperand::EngineParam(engine_param.clone()),
-        ],
-    }));
 
     for arg in args {
         // push <arg>
@@ -584,6 +567,15 @@ fn expand_construct_engcall(construct: &SemanticCompilerConstruct, out: &mut Vec
             operands: vec![arg.clone()],
         }));
     }
+
+    // mov a64, <engine_param>
+    out.push(SemanticRepr::Instruction(SemanticInstruction {
+        opcode: OpcodeMnemonic::Mov,
+        operands: vec![
+            SemanticOperand::Register(RegisterSpec::qword(Register::A)),
+            SemanticOperand::EngineParam(engine_param.clone()),
+        ],
+    }));
 
     out.push(SemanticRepr::Instruction(SemanticInstruction {
         opcode: OpcodeMnemonic::EngCall,

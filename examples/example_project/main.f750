@@ -1,18 +1,16 @@
-.data:
-    const SomeNumber: dword 42
-    const SomeString: "Hello, World!", 0
-    const LoopString: "Loop!", 0
-    const DangerousConstant: dword 0xffffffff
-    foo: dword -67
-    bar: float 69.420
-    magic: word 0x55aa
-    const Arg0: byte 0xff
-    const Arg1: byte 0xf0
+.static pub publicVar: dword 1234
+.static pub const PublicConst: dword 5678
+.static const SomeNumber: dword 42
+.static const SomeString: "Hello, World!", 0
+.static const LoopString: "Loop!", 0
+.static const DangerousConstant: dword 0xffffffff
+.static foo: dword -67
+.static bar: float 69.420
+.static magic: word 0x55aa
+.static const Arg0: byte 0xff
+.static const Arg1: byte 0xf0
 
-    pub publicVar: dword 1234
-    pub const PublicConst: dword 5678
-
-_start:
+global _start:
     stackalloc 32
 
     mov a64, "string table test!"

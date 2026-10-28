@@ -2,12 +2,13 @@
 //! 
 //! In the F750 compiler flow, each line in a source file is first tokenized into a sequence of `Token`s, which are then parsed into semantic representations of the source code.
 
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::str::FromStr;
 use log::{debug, trace, warn};
 use thiserror::Error;
 use lazy_static::lazy_static;
-use crate::semantic::{SemanticRepr, SemanticOperand, SemanticBindingDef, SemanticInstruction, SemanticSymbol, SemanticCompilerConstruct, SemanticLiteral, SemanticDeref, SemanticDerefKind, SemanticImmediateType};
+use crate::semantic::{SemanticRepr, SemanticOperand, SemanticBindingDef, SemanticInstruction, SemanticSymbol, SemanticCompilerConstruct, SemanticLiteral, SemanticDeref, SemanticDerefKind, SemanticImmediateType, SemanticLabelDef};
 use crate::{semantic, tokenizer, util};
 use crate::opcode::{CompilerConstruct, OpcodeMnemonic, ReservedWord};
 use crate::tokenizer::{Token, TokenStream, TokenizedLine};
@@ -49,6 +50,8 @@ pub enum ParseError {
     InvalidDataTypeForLiteral(String, DataType),
     #[error("Invalid external symbol without namespace: '{0}'. If you are using an alias, do not use the 'extern' keyword.")]
     ExternalSymbolWithoutNamespace(String),
+    #[error("Duplicate keyword modifier: {0}")]
+    DuplicateKeyword(ReservedWord),
 
     #[error("Invalid register spec: {0}")]
     InvalidRegisterSpec(#[from] RegisterSpecError),
@@ -71,27 +74,15 @@ pub enum ParseError {
     ZeroAddressNotAllowed,
 }
 
-/// Represents the context in which a line is being parsed.
-/// 
-/// In F750, binding definitions are only allowed in the `.data` section, which is denoted by the `ParseLineContext::BindingDef` context. This context is used to enforce this rule during parsing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParseLineContext {
-    /// The default context, where any line can be parsed.
-    None,
-    /// The context for parsing a binding definition, which is only allowed in the `.data` section.
-    BindingDef,
-}
-
 /// Parses a source file into a vector of `SemanticRepr`s, which represent the semantic structure of the source code. 
 /// 
 /// This function first tokenizes each line of the source file, and then parses the tokens into semantic representations.
 pub fn parse_source(source: &[TokenizedLine]) -> Result<Vec<SemanticRepr>, ParseErrorDetails> {
-    let mut ctx = ParseLineContext::None;
     let mut ret = Vec::new();
 
     debug!("Beginning of parse step.");
     for (i, line) in source.iter().enumerate() {
-        let res = parse_line(line, ctx);
+        let res = parse_line(line);
 
         let parsed_line = match res {
             Ok(parsed_line) => parsed_line,
@@ -103,13 +94,6 @@ pub fn parse_source(source: &[TokenizedLine]) -> Result<Vec<SemanticRepr>, Parse
                 });
             }
         };
-        if ctx == ParseLineContext::BindingDef && !matches!(parsed_line, SemanticRepr::BindingDef(_)) {
-            ctx = ParseLineContext::None;
-        }
-
-        if ctx == ParseLineContext::None && let SemanticRepr::SpecialSection(s) = &parsed_line && s == tokenizer::SPECIAL_SECTION_LABEL_DATA {
-            ctx = ParseLineContext::BindingDef;
-        }
         ret.push(parsed_line);
     }
 
@@ -117,23 +101,15 @@ pub fn parse_source(source: &[TokenizedLine]) -> Result<Vec<SemanticRepr>, Parse
 }
 
 /// Parses a line of tokens into a `SemanticRepr`, which represents the semantic structure of the line. The parsing behavior may vary depending on the context in which the line is being parsed (e.g., whether it is in a binding definition context).
-fn parse_line(tokens: &[Token], ctx: ParseLineContext) -> ParseResult<SemanticRepr> {
+fn parse_line(tokens: &[Token]) -> ParseResult<SemanticRepr> {
     let mut stream = TokenStream::new(tokens);
+    let mut keyword_modifiers = HashSet::new();
 
-    // special section
-    if let Some(Token::Token(s)) = stream.peek() && s.starts_with(tokenizer::CHAR_DOT) {
-        let next = stream.next_or_err()?;
-        let Token::Token(s) = next else {
-            return Err(ParseError::UnexpectedToken(format!("Expected an identifier after '.' for a special section, found {:?}", next)));
-        };
+    // binding
+    if let Some(Token::Token(s)) = stream.peek_non_whitespace() && s == tokenizer::STATIC_DEF_KEYWORD {
+        stream.next_non_whitespace_or_err()?;
+        stream.expect(Token::Whitespace)?;
 
-        stream.expect(Token::Colon)?;
-        return Ok(SemanticRepr::SpecialSection(s));
-    }
-
-    let is_label = tokens.len() == 2 && matches!(tokens[1], Token::Colon);
-
-    if ctx == ParseLineContext::BindingDef && !is_label {
         let binding_name: String;
         let mut is_constant = false;
         let mut is_public = false;
@@ -171,6 +147,20 @@ fn parse_line(tokens: &[Token], ctx: ParseLineContext) -> ParseResult<SemanticRe
         return Ok(SemanticRepr::BindingDef(ret));
     }
 
+    // keywords
+
+    while let Some(Token::Keyword(kw)) = stream.peek_non_whitespace_owned() {
+        // expect whitespace after keyword
+        stream.next_non_whitespace_or_err()?;
+        stream.expect(Token::Whitespace)?;
+
+        if keyword_modifiers.contains(&kw) {
+            return Err(ParseError::DuplicateKeyword(kw));
+        }
+
+        keyword_modifiers.insert(kw);
+    }
+
     // compiler construct
     if let Some(Token::Annotation) = stream.peek() {
         stream.next_or_err()?; // consume the annotation token (@)
@@ -197,6 +187,16 @@ fn parse_line(tokens: &[Token], ctx: ParseLineContext) -> ParseResult<SemanticRe
         }));
     }
 
+    // raw preprocessor directive
+    if let Some(Token::Hashtag) = stream.peek() {
+        stream.next_or_err()?;
+        let mut ret = Vec::new();
+        while let Some(token) = stream.next() {
+            ret.push(token.clone());
+        }
+        return Ok(SemanticRepr::PreprocessorDirectiveRaw(ret));
+    }
+
     // labels and instructions
     let first = stream.next_non_whitespace_or_err()?;
     let Token::Token(first) = first else {
@@ -213,7 +213,11 @@ fn parse_line(tokens: &[Token], ctx: ParseLineContext) -> ParseResult<SemanticRe
         if name.starts_with(tokenizer::ATOM_UNDERLINE) {
             return Err(ParseError::DoubleUnderscoreLabelReserved);
         }
-        return Ok(SemanticRepr::Label(SemanticSymbol::new(name.into(), false)));
+
+        let global = keyword_modifiers.contains(&ReservedWord::Global);
+        let label_def = SemanticLabelDef::new(SemanticSymbol::new(name.into(), false), global);
+
+        return Ok(SemanticRepr::Label(label_def));
     }
 
     // instruction

@@ -22,6 +22,7 @@ pub mod compiler;
 pub mod bytecode;
 mod construct;
 mod encode;
+mod preprocessor;
 
 #[derive(Debug, Error)]
 pub enum Error {

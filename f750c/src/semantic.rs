@@ -4,39 +4,38 @@ use std::fmt::{write, Debug, Display, Formatter};
 use bitfield_struct::bitfield;
 use crate::bytecode::{BytecodeSerialize, BytecodeStream};
 use crate::opcode::{CompilerConstruct, OpcodeMnemonic, Register};
+use crate::tokenizer::Token;
 use crate::util;
 use crate::value::{DataType, DataTypeLiteral, RegisterSpec, SymbolName};
 
 /// Semantic representation of a parsed line in the F750 source code.
 #[derive(Debug, Clone)]
 pub enum SemanticRepr {
-    /// Represents the start of a special section, such as `.data`.
-    SpecialSection(String),
     /// Represents a binding definition.
     BindingDef(SemanticBindingDef),
     /// Represents a label.
-    Label(SemanticSymbol),
+    Label(SemanticLabelDef),
     /// Represents an instruction.
     Instruction(SemanticInstruction),
     /// Represents a compiler construct.
     CompilerConstruct(SemanticCompilerConstruct),
+    PreprocessorDirectiveRaw(Vec<Token>),
 }
 
 impl Display for SemanticRepr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticRepr::SpecialSection(section) => write!(f, "{}", section),
             SemanticRepr::BindingDef(binding) => write!(f, "{binding}"),
-            SemanticRepr::Label(label) => {
-                if label.external {
-                    write!(f, "(extern) _{}:", label.name)
-
-                } else {
-                    write!(f, "_{}:", label.name)
-                }
-            },
+            SemanticRepr::Label(a) => write!(f, "{a}"),
             SemanticRepr::Instruction(instr) => write!(f, "{}", instr),
             SemanticRepr::CompilerConstruct(construct) => write!(f, "{}", construct),
+            SemanticRepr::PreprocessorDirectiveRaw(tokens) => {
+                write!(f, "#")?;
+                for token in tokens {
+                    write!(f, "{}", token)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -80,6 +79,8 @@ impl SemanticBindingDef {
 
 impl Display for SemanticBindingDef {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(bindingdef) ")?;
+
         if self.public {
             write!(f, "pub ")?;
         }
@@ -109,12 +110,45 @@ impl BytecodeSerialize for SemanticBindingDef {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SemanticLabelDef {
+    pub symbol: SemanticSymbol,
+    pub global: bool,
+}
+
+impl SemanticLabelDef {
+    pub fn new(symbol: SemanticSymbol, global: bool) -> Self {
+        Self {
+            symbol,
+            global,
+        }
+    }
+}
+
+impl From<SemanticSymbol> for SemanticLabelDef {
+    fn from(value: SemanticSymbol) -> Self {
+        return Self {
+            symbol: value,
+            global: false,
+        }
+    }
+}
+
+impl Display for SemanticLabelDef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.global {
+            write!(f, "global ")?;
+        }
+
+        write!(f, "_{}:", self.symbol)
+    }
+}
+
 /// Represents a semantic literal value.
 ///
 /// Note that semantic literals are different from [`DataType`]s in that they represent actual literal values written in the source code, which allows string literals to be present.
 #[derive(Debug, Clone)]
-pub enum
-SemanticLiteral {
+pub enum SemanticLiteral {
     UntypedInteger(i64),
     UntypedFloating(f64),
     Typed(DataTypeLiteral),
@@ -494,6 +528,16 @@ impl From<String> for SemanticSymbol {
         Self {
             name: SymbolName::new(&name, None),
             external: false,
+        }
+    }
+}
+
+impl Display for SemanticSymbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.external {
+            write!(f, "(extern) {}", self.name)
+        } else {
+            write!(f, "{}", self.name)
         }
     }
 }

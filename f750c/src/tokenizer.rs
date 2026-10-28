@@ -26,16 +26,16 @@ pub const ATOM_UNDERLINE: char = '_';
 pub const ATOM_PLUS: char = '+';
 /// Denotes memory dereference.
 pub const ATOM_DEREF: char = '&';
-/// Denotes either an engine parameter reference, or the beginning of a compiler directive.
+/// Denotes either an engine parameter reference, or the beginning of a preprocessor directive.
 pub const ATOM_HASHTAG: char = '#';
 /// Denotes the beginning of a compiler construct.
 pub const ATOM_AT: char = '@';
 
+/// Denotes the keyword for static binding definitions.
+pub const STATIC_DEF_KEYWORD: &str = ".static";
+
 /// The character dot(.).
 pub const CHAR_DOT: char = '.';
-
-/// The beginning of the special '.data' section.
-pub const SPECIAL_SECTION_LABEL_DATA: &str = ".data";
 
 /// Represents a token during tokenization.
 #[derive(Debug, Clone, PartialEq)]
@@ -110,6 +110,15 @@ impl TokenStream {
         for token in &self.tokens {
             if token != &Token::Whitespace {
                 return Some(token);
+            }
+        }
+        None
+    }
+    
+    pub fn peek_non_whitespace_owned(&self) -> Option<Token> {
+        for token in &self.tokens {
+            if token != &Token::Whitespace {
+                return Some(token.clone());
             }
         }
         None

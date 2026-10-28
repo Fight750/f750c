@@ -331,16 +331,16 @@ impl OpcodePayload {
                 stream.write_varint64(param_index);
             },
             Self::JmpReg(cond, reg) => {
-                stream.write_u8(*cond as u8);
                 reg.serialize(stream);
+                stream.write_u8(*cond as u8);
             },
             Self::JmpImm(cond, imm) => {
-                stream.write_u8(*cond as u8);
                 imm.serialize(stream);
+                stream.write_u8(*cond as u8);
             },
             Self::JmpLabel(cond, label_ref) => {
-                stream.write_u8(*cond as u8);
                 label_ref.bytecode_serialize(stream, labels)?;
+                stream.write_u8(*cond as u8);
             },
             _ => {}
         }
@@ -660,7 +660,7 @@ pub enum CompilerDirective {
     Namespace,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr, Display, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr, Display, EnumString, Hash)]
 pub enum ReservedWord {
     #[strum(serialize = "const")]
     Const,
@@ -670,6 +670,8 @@ pub enum ReservedWord {
     Alias,
     #[strum(serialize = "pub")]
     Public,
+    #[strum(serialize = "global")]
+    Global,
 }
 
 #[repr(u8)]

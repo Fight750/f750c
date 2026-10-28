@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use log::info;
 use thiserror::Error;
 use crate::bytecode::{BytecodeSerialize, BytecodeStream};
-use crate::semantic::{SemanticBindingDef, SemanticDeref, SemanticDerefKind, SemanticImmediateType, SemanticInstruction, SemanticLiteral, SemanticOperand, SemanticRepr, SemanticSource, SemanticSymbol};
+use crate::semantic::{SemanticBindingDef, SemanticDeref, SemanticDerefKind, SemanticImmediateType, SemanticInstruction, SemanticLabelDef, SemanticLiteral, SemanticOperand, SemanticRepr, SemanticSource, SemanticSymbol};
 use crate::{tokenizer, util};
 use crate::value::SymbolName;
 
@@ -62,8 +62,6 @@ pub enum BindingAllocationType {
 pub enum BindingTableError {
     #[error("Data section start not allowed here")]
     DuplicateDataSection,
-    #[error("Binding definition found in non-data section")]
-    BindingDefInNonDataSection,
     #[error("Duplicate binding definition: {0}")]
     DuplicateBindingDef(SymbolName),
     #[error("Use of undefined binding: {0}")]
@@ -264,27 +262,9 @@ impl BindingTable {
     }
 
     fn append_bindings(&mut self, source: &SemanticSource, module_name: &str) -> BindingTableResult<()> {
-        let mut section_open = false;
-
         for (i, line) in source.iter().enumerate() {
             match line {
-                SemanticRepr::SpecialSection(label) => {
-                    if label == tokenizer::SPECIAL_SECTION_LABEL_DATA {
-                        if section_open {
-                            return Err(BindingTableError::DuplicateDataSection);
-                        }
-
-                        section_open = true;
-
-                    } else {
-                        section_open = false;
-                    }
-                }
                 SemanticRepr::BindingDef(def) => {
-                    if !section_open {
-                        return Err(BindingTableError::BindingDefInNonDataSection);
-                    }
-
                     let symbol = SymbolName::new(&def.name, Some(module_name));
 
                     if self.entries.contains_key(&symbol) {
@@ -307,9 +287,7 @@ impl BindingTable {
                     };
                     self.entries.insert(symbol, entry);
                 }
-                _ => {
-                    section_open = false;
-                }
+                _ => {}
             }
         }
 
@@ -493,7 +471,7 @@ impl SymbolTable for LabelTable {
 
 #[derive(Debug, Clone)]
 struct LabelTableEntry {
-    symbol: SemanticSymbol,
+    label_def: SemanticLabelDef,
     addr: u64,
 }
 
@@ -506,14 +484,15 @@ impl LabelTable {
         for (module_name, source) in lines.iter() {
             for line in source {
                 match line {
-                    SemanticRepr::Label(symbol) => {
+                    SemanticRepr::Label(label_def) => {
+                        let symbol = &label_def.symbol;
                         if entries.contains_key(&symbol.name) {
                             return Err(CompilerError::DuplicateLabel(symbol.name.clone()));
                         }
 
                         let name = symbol.name.with_current_module(module_name);
                         let entry = LabelTableEntry {
-                            symbol: SemanticSymbol::new(name.clone(), false),
+                            label_def: SemanticLabelDef::new(SemanticSymbol::new(name.clone(), false), label_def.global),
                             addr: addr_counter,
                         };
                         entries.insert(name, entry);
@@ -537,7 +516,7 @@ impl LabelTable {
                         if operand.is_label() && let Some(external) = operand.get_external_symbol() {
                             if !entries.contains_key(&external.name) {
                                 let entry = LabelTableEntry {
-                                    symbol: SemanticSymbol::new(external.name.clone(), true),
+                                    label_def: SemanticLabelDef::new(SemanticSymbol::new(external.name.clone(), true), true),
                                     addr: 0,
                                 };
                                 entries.insert(external.name.clone(), entry);
@@ -578,7 +557,7 @@ impl BytecodeSerialize for LabelTable {
 
             let mut flag = 0u8;
             // extern
-            if entry.symbol.external {
+            if entry.label_def.symbol.external {
                 flag |= 1 << 0;
             }
             // end
@@ -601,7 +580,7 @@ impl BytecodeSerialize for LabelTable {
 
             stream.write_cstr(&symbol.name);
 
-            if !entry.symbol.external {
+            if !entry.label_def.symbol.external {
                 stream.write_varint64(entry.addr);
             }
         }
