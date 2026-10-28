@@ -6,8 +6,10 @@ use strum::{AsRefStr, EnumString};
 pub enum PreprocessorDirective {
     #[strum(serialize = "use")]
     Use,
-    #[strum(serialize = "extends")]
-    Extends,
+    #[strum(serialize = "inherit")]
+    Inherit,
+    #[strum(serialize = "local")]
+    LocalBinding,
     #[strum(serialize = "define")]
     Define,
     #[strum(serialize = "if")]
