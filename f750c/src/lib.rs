@@ -8,9 +8,11 @@ use thiserror::Error;
 use crate::bytecode::{BytecodeSerialize, BytecodeStream};
 use crate::compiler::{BindingTable, EngCallTable, LabelTable};
 use crate::construct::ConstructExpansionErrorDetails;
+use crate::context::CompilerContext;
 use crate::encode::{InstructionEncodeContext, InstructionEncodeError};
 use crate::parser::{ParseError, ParseErrorDetails};
-use crate::semantic::{SemanticBindingDef, SemanticInstruction, SemanticRepr, SemanticSymbol};
+use crate::preprocessor::PreprocessorError;
+use crate::semantic::{SemanticBindingDef, SemanticInstruction, SemanticRepr, SemanticReprInfo, SemanticSymbol};
 
 pub mod opcode;
 pub mod value;
@@ -23,6 +25,7 @@ pub mod bytecode;
 mod construct;
 mod encode;
 mod preprocessor;
+mod context;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -32,6 +35,8 @@ pub enum Error {
     Tokenize(ParseError, usize),
     #[error("Parser error: {0}")]
     Parse(#[from] ParseErrorDetails),
+    #[error("Preprocessor error: {0}")]
+    Preprocessor(#[from] PreprocessorError),
     #[error("Compiler construct expansion error: {0}")]
     ConstructExpansion(ConstructExpansionErrorDetails),
     #[error("Compiler error: {0}")]
@@ -63,34 +68,40 @@ pub struct CompilerOutput {
 }
 
 pub fn compile_source(input: CompilerInput) -> CompileResult<CompilerOutput> {
-    let mut semantic_lines = IndexMap::new();
-    for (name, source) in input.sources.iter() {
-        let processed = process_single_source(source)?;
-        semantic_lines.insert(name.clone(), processed);
+    let mut context = CompilerContext::new(input);
+    let mut source = Vec::new();
+    
+    for (name, s) in context.input.sources.iter() {
+        let processed = process_single_source(s)?;
+        for line in processed {
+            let repr = SemanticReprInfo::new(line.clone(), name.clone());
+            source.push(repr);
+        }
     }
+    
+    // preprocessing
+    preprocessor::preprocess(&mut source, &mut context)?;
 
     // binding table creation
-    let binding_table = BindingTable::parse_and_lower(&mut semantic_lines)?;
+    let binding_table = BindingTable::parse_and_lower(&mut source)?;
 
     let mut bytecode_stream = BytecodeStream::new_with_header();
     // binding table
     binding_table.serialize(&mut bytecode_stream);
 
-    let label_table = LabelTable::parse_and_lower(&mut semantic_lines)?;
+    let label_table = LabelTable::parse_and_lower(&mut source)?;
     label_table.serialize(&mut bytecode_stream);
 
-    let engcall_table = EngCallTable::parse(&semantic_lines)?;
+    let engcall_table = EngCallTable::parse(&source)?;
     engcall_table.serialize(&mut bytecode_stream);
     
     // extract instructions
-    let semantic_lines_c = semantic_lines.clone();
+    let semantic_lines_c = source.clone();
 
     let mut instructions: Vec<SemanticInstruction> = Vec::new();
-    for (_, lines) in semantic_lines {
-        for line in lines {
-            if let SemanticRepr::Instruction(instr) = line {
-                instructions.push(instr);
-            }
+    for line in source {
+        if let SemanticRepr::Instruction(instr) = &line.repr {
+            instructions.push(instr.clone());
         }
     }
 
@@ -106,7 +117,7 @@ pub fn compile_source(input: CompilerInput) -> CompileResult<CompilerOutput> {
 
     Ok(CompilerOutput {
         bytes: bytecode_stream,
-        semantic_lines: semantic_lines_c.into_iter().flat_map(|(_, v)| v).collect(),
+        semantic_lines: semantic_lines_c.into_iter().map(|line| line.repr).collect(),
         semantic_lines_expanded: Vec::new(),
     })
 }

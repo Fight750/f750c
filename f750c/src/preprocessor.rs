@@ -2,9 +2,12 @@
 
 use std::fmt::Display;
 use std::str::FromStr;
+use log::debug;
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
+use crate::context::CompilerContext;
 use crate::parser::ParseError;
+use crate::semantic::{SemanticDerefKind, SemanticImmediateType, SemanticOperand, SemanticRepr, SemanticSource};
 use crate::tokenizer;
 use crate::tokenizer::{Token, TokenStream};
 
@@ -18,6 +21,12 @@ pub enum PreprocessorError {
     UnknownDirective(String),
     #[error("Unsupported preprocessor directive: {0}")]
     UnsupportedDirective(PreprocessorDirectiveKind),
+    #[error("Unknown namespace: {0}")]
+    UnknownNamespace(String),
+    #[error("Alias already exists: {0}")]
+    AliasAlreadyExists(String),
+    #[error("Ambiguous alias: {0}")]
+    AmbiguousAlias(String),
 }
 
 impl From<ParseError> for PreprocessorError {
@@ -115,4 +124,63 @@ impl Display for PreprocessorDirective {
             }
         }
     }
+}
+
+pub fn preprocess(source: &mut SemanticSource, ctx: &mut CompilerContext) -> PreprocessorResult<()> {
+    expand_use_directives(source, ctx)?;
+
+    Ok(())
+}
+
+fn expand_use_directives(source: &mut SemanticSource, ctx: &mut CompilerContext) -> PreprocessorResult<()> {
+    // scan and map aliases
+    for line in source.iter_mut() {
+        let SemanticRepr::PreprocessorDirective(PreprocessorDirective::Use(ns, alias)) = &line.repr else {
+            continue;
+        };
+
+        if !ctx.has_namespace(ns) {
+            return Err(PreprocessorError::UnknownNamespace(ns.clone()));
+        }
+
+        if ctx.has_namespace(alias) {
+            return Err(PreprocessorError::AmbiguousAlias(alias.clone()));
+        }
+
+        let source_ctx = ctx.get_source_ctx_mut(&line.namespace);
+
+        if source_ctx.has_alias(alias) {
+            return Err(PreprocessorError::AliasAlreadyExists(alias.clone()));
+        }
+
+        source_ctx.add_alias(alias, ns);
+    }
+
+    // replace namespace references
+    for line in source.iter_mut() {
+        let SemanticRepr::Instruction(instruction) = &mut line.repr else {
+            continue;
+        };
+        let source_ctx = ctx.get_source_ctx_mut(&line.namespace);
+
+        for operand in instruction.operands.iter_mut() {
+            match operand {
+                SemanticOperand::Immediate(imm) => {
+                    if let Some(symbol) = imm.get_symbol_mut() {
+                        let prev = symbol.name.clone();
+
+                        source_ctx.resolve_namespace_symbol(&mut symbol.name);
+                    }
+                }
+                SemanticOperand::Deref(deref) => {
+                    if let SemanticDerefKind::Binding(symbol) = &mut deref.kind {
+                        source_ctx.resolve_namespace_symbol(&mut symbol.name);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
 }

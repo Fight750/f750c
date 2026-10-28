@@ -90,33 +90,21 @@ impl BindingTable {
         }
     }
 
-    pub fn parse_and_lower(lines: &mut IndexMap<String, Vec<SemanticRepr>>) -> CompileResult<Self> {
+    pub fn parse_and_lower(source: &mut SemanticSource) -> CompileResult<Self> {
         let mut ret = Self::new();
-
-        for (module_name, source) in lines.iter_mut() {
-            ret.resolve_string_table(source, module_name)?;
-        }
+        
+        ret.resolve_string_table(source)?;
         ret.allocate_string_table();
-
-        for (module_name, source) in lines.iter() {
-            ret.preprocess_bindings(source, module_name)?;
-        }
-
-        for (module_name, source) in lines.iter() {
-            ret.append_bindings(source, module_name)?;
-        }
-
-        // binding inlining
-        for (module_name, source) in lines.iter_mut() {
-            ret.lower_bindings(source, module_name)?;
-        }
+        ret.preprocess_bindings(source)?;
+        ret.append_bindings(source)?;
+        ret.lower_bindings(source)?;
         
         Ok(ret)
     }
 
-    fn resolve_string_table(&mut self, source: &mut SemanticSource, module_name: &str) -> BindingTableResult<()> {
+    fn resolve_string_table(&mut self, source: &mut SemanticSource) -> BindingTableResult<()> {
         for line in source {
-            let SemanticRepr::Instruction(instruction) = line else {
+            let SemanticRepr::Instruction(instruction) = &mut line.repr else {
                 continue;
             };
 
@@ -151,9 +139,11 @@ impl BindingTable {
         }
     }
 
-    fn preprocess_bindings(&mut self, source: &SemanticSource, module_name: &str) -> BindingTableResult<()> {
+    fn preprocess_bindings(&mut self, source: &SemanticSource) -> BindingTableResult<()> {
         for line in source {
-            match line {
+            let module_name = &line.namespace;
+            
+            match &line.repr {
                 SemanticRepr::BindingDef(def) => {
                     let symbol = SymbolName::new(&def.name, Some(module_name));
                     if self.entries.contains_key(&symbol) {
@@ -261,11 +251,11 @@ impl BindingTable {
         Ok(())
     }
 
-    fn append_bindings(&mut self, source: &SemanticSource, module_name: &str) -> BindingTableResult<()> {
+    fn append_bindings(&mut self, source: &SemanticSource) -> BindingTableResult<()> {
         for (i, line) in source.iter().enumerate() {
-            match line {
+            match &line.repr {
                 SemanticRepr::BindingDef(def) => {
-                    let symbol = SymbolName::new(&def.name, Some(module_name));
+                    let symbol = SymbolName::new(&def.name, Some(&line.namespace));
 
                     if self.entries.contains_key(&symbol) {
                         return Err(BindingTableError::DuplicateBindingDef(symbol));
@@ -294,9 +284,10 @@ impl BindingTable {
         Ok(())
     }
 
-    fn lower_bindings(&mut self, source: &mut SemanticSource, module_name: &str) -> CompileResult<()> {
+    fn lower_bindings(&mut self, source: &mut SemanticSource) -> CompileResult<()> {    
         for line in source.iter_mut() {
-            let SemanticRepr::Instruction(instruction) = line else {
+            let module_name = &line.namespace;
+            let SemanticRepr::Instruction(instruction) = &mut line.repr else {
                 continue;
             };
 
@@ -476,59 +467,59 @@ struct LabelTableEntry {
 }
 
 impl LabelTable {
-    pub fn parse_and_lower(lines: &mut IndexMap<String, Vec<SemanticRepr>>) -> CompileResult<Self> {
+    pub fn parse_and_lower(lines: &mut SemanticSource) -> CompileResult<Self> {
         let mut entries = IndexMap::new();
         let mut addr_counter = 0u64;
 
         // parse
-        for (module_name, source) in lines.iter() {
-            for line in source {
-                match line {
-                    SemanticRepr::Label(label_def) => {
-                        let symbol = &label_def.symbol;
-                        if entries.contains_key(&symbol.name) {
-                            return Err(CompilerError::DuplicateLabel(symbol.name.clone()));
-                        }
+        for line in lines.iter() {
+            let module_name = &line.namespace;
+            
+            match &line.repr {
+                SemanticRepr::Label(label_def) => {
+                    let symbol = &label_def.symbol;
+                    if entries.contains_key(&symbol.name) {
+                        return Err(CompilerError::DuplicateLabel(symbol.name.clone()));
+                    }
 
-                        let name = symbol.name.with_current_module(module_name);
-                        let entry = LabelTableEntry {
-                            label_def: SemanticLabelDef::new(SemanticSymbol::new(name.clone(), false), label_def.global),
-                            addr: addr_counter,
-                        };
-                        entries.insert(name, entry);
-                    }
-                    SemanticRepr::Instruction(_) => {
-                        addr_counter += 1;
-                    }
-                    _ => {}
+                    let name = symbol.name.with_current_module(module_name);
+                    let entry = LabelTableEntry {
+                        label_def: SemanticLabelDef::new(SemanticSymbol::new(name.clone(), false), label_def.global),
+                        addr: addr_counter,
+                    };
+                    entries.insert(name, entry);
                 }
+                SemanticRepr::Instruction(_) => {
+                    addr_counter += 1;
+                }
+                _ => {}
             }
         }
 
         // lower
-        for (module_name, source) in lines.iter_mut() {
-            for line in source {
-                if let SemanticRepr::Instruction(instruction) = line {
-                    for operand in instruction.operands.iter_mut() {
-                        operand.fully_qualify_symbols(module_name);
+        for line in lines.iter_mut() {
+            let module_name = &line.namespace;
+            
+            if let SemanticRepr::Instruction(instruction) = &mut line.repr {
+                for operand in instruction.operands.iter_mut() {
+                    operand.fully_qualify_symbols(module_name);
 
-                        // external label discovery
-                        if operand.is_label() && let Some(external) = operand.get_external_symbol() {
-                            if !entries.contains_key(&external.name) {
-                                let entry = LabelTableEntry {
-                                    label_def: SemanticLabelDef::new(SemanticSymbol::new(external.name.clone(), true), true),
-                                    addr: 0,
-                                };
-                                entries.insert(external.name.clone(), entry);
-                            }
+                    // external label discovery
+                    if operand.is_label() && let Some(external) = operand.get_external_symbol() {
+                        if !entries.contains_key(&external.name) {
+                            let entry = LabelTableEntry {
+                                label_def: SemanticLabelDef::new(SemanticSymbol::new(external.name.clone(), true), true),
+                                addr: 0,
+                            };
+                            entries.insert(external.name.clone(), entry);
                         }
+                    }
 
-                        // process operand
-                        if let SemanticOperand::Immediate(SemanticImmediateType::Label(symbol, offset)) = operand {
-                            let name = symbol.name.with_current_module(module_name);
-                            if !entries.contains_key(&name) {
-                                return Err(CompilerError::UndefinedLabel(name));
-                            }
+                    // process operand
+                    if let SemanticOperand::Immediate(SemanticImmediateType::Label(symbol, offset)) = operand {
+                        let name = symbol.name.with_current_module(module_name);
+                        if !entries.contains_key(&name) {
+                            return Err(CompilerError::UndefinedLabel(name));
                         }
                     }
                 }
@@ -599,27 +590,26 @@ impl EngCallTable {
         }
     }
 
-    pub fn parse(lines: &IndexMap<String, Vec<SemanticRepr>>) -> CompileResult<Self> {
+    pub fn parse(lines: &SemanticSource) -> CompileResult<Self> {
         let mut entries = IndexMap::new();
         let mut count = 0u64;
+        
+        for line in lines {
+            let module_name = &line.namespace;
+            
+            let SemanticRepr::Instruction(instruction) = &line.repr else {
+                continue;
+            };
 
-        for (module_name, source) in lines {
-            for line in source {
-                let SemanticRepr::Instruction(instruction) = line else {
-                    continue;
-                };
-
-                for operand in &instruction.operands {
-                    if let SemanticOperand::EngineParam(param) = operand {
-                        if !entries.contains_key(param) {
-                            entries.insert(param.clone(), count);
-                            count += 1;
-                        }
+            for operand in &instruction.operands {
+                if let SemanticOperand::EngineParam(param) = operand {
+                    if !entries.contains_key(param) {
+                        entries.insert(param.clone(), count);
+                        count += 1;
                     }
                 }
             }
         }
-
         Ok(Self {
             entries,
         })

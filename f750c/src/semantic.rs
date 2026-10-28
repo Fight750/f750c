@@ -35,8 +35,6 @@ impl Display for SemanticRepr {
     }
 }
 
-pub type SemanticSource = [SemanticRepr];
-
 #[derive(Debug, Clone)]
 pub struct SemanticReprInfo {
     pub repr: SemanticRepr,
@@ -57,6 +55,8 @@ impl From<SemanticReprInfo> for SemanticRepr {
         value.repr
     }
 }
+
+pub type SemanticSource = [SemanticReprInfo];
 
 /// Represents the semantic definition of a binding.
 #[derive(Debug, Clone)]
@@ -451,6 +451,15 @@ impl SemanticImmediateType {
     pub fn from_u64_untyped(value: u64) -> Self {
         SemanticImmediateType::Literal(SemanticLiteral::UntypedInteger(value as i64))
     }
+    
+    pub fn get_symbol_mut(&mut self) -> Option<&mut SemanticSymbol> {
+        match self {
+            SemanticImmediateType::Label(symbol, _) => Some(symbol),
+            SemanticImmediateType::Binding(symbol, _) => Some(symbol),
+            SemanticImmediateType::ConstDerefBinding(symbol) => Some(symbol),
+            _ => None,
+        }
+    }
 }
 
 impl Display for SemanticImmediateType {
@@ -560,7 +569,7 @@ impl Display for SemanticSymbol {
 
 #[derive(Debug, Clone)]
 pub struct SemanticReprStream {
-    lines: Vec<SemanticRepr>,
+    lines: Vec<SemanticReprInfo>,
     cur: usize,
 }
 
@@ -572,7 +581,7 @@ impl SemanticReprStream {
         }
     }
 
-    pub fn into_inner(self) -> Vec<SemanticRepr> {
+    pub fn into_inner(self) -> Vec<SemanticReprInfo> {
         self.lines
     }
 
@@ -580,7 +589,7 @@ impl SemanticReprStream {
         self.cur < self.lines.len()
     }
 
-    pub fn peek(&self) -> Option<&SemanticRepr> {
+    pub fn peek(&self) -> Option<&SemanticReprInfo> {   
         self.lines.get(self.cur)
     }
 }
